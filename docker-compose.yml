@@ -1,0 +1,66 @@
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./infrastructure/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+    networks:
+      - frontend
+
+  api:
+    build: ./api
+    environment:
+      DATABASE_URL: postgresql://relayops:relayops@db:5432/relayops
+    depends_on:
+      - db
+    networks:
+      - frontend
+      - backend
+
+  worker:
+    build: ./worker
+    environment:
+      DATABASE_URL: postgresql://relayops:relayops@db:5432/relayops
+      RECEIVER_URL: http://receiver:9000/webhook
+      WEBHOOK_SECRET: relayops-dev-secret
+    depends_on:
+      - db
+      - receiver
+    deploy:
+      replicas: 2
+    networks:
+      - backend
+      - webhooks
+
+  receiver:
+    build: ./receiver
+    environment:
+      WEBHOOK_SECRET: relayops-dev-secret
+    ports:
+      - "9000:9000"
+    networks:
+      - webhooks
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: relayops
+      POSTGRES_PASSWORD: relayops
+      POSTGRES_DB: relayops
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    networks:
+      - backend
+
+networks:
+  frontend:
+  backend:
+  webhooks:
+
+volumes:
+  pgdata:
