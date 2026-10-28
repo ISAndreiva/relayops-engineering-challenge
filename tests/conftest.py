@@ -1,7 +1,7 @@
 import os
 import sys
+import time
 from pathlib import Path
-
 import httpx
 import pytest
 
@@ -21,9 +21,21 @@ def api():
     with httpx.Client(base_url=BASE_URL, timeout=5) as client:
         yield client
 
+def _queue_drained(client) -> bool:
+    text = client.get("/metrics").text
+    pending = processing = 0
+    for line in text.splitlines():
+        if line.startswith('relayops_events{status="pending"}'):
+            pending = int(line.rsplit(" ", 1)[1])
+        elif line.startswith('relayops_events{status="processing"}'):
+            processing = int(line.rsplit(" ", 1)[1])
+    processing = int(line.rsplit(" ", 1)[1])
 
 @pytest.fixture
-def receiver():
+def receiver(api):
     with httpx.Client(base_url=RECEIVER_URL, timeout=5) as client:
         client.delete("/received")
+        deadline = time.time() + 30
+        while not _queue_drained(api) and time.time() < deadline:
+            time.sleep(0.5)
         yield client

@@ -1,4 +1,3 @@
-"""End-to-end smoke tests. Require the stack: docker compose up --build"""
 import time
 import uuid
 

@@ -9,24 +9,34 @@ services:
       - api
     networks:
       - frontend
+    healthcheck:
+        test: ["CMD-SHELL", "wget -qO- http://localhost:80/health || exit 1"]
+        interval: 5s
+        timeout: 3s
+        retries: 10
 
   api:
     build: ./api
     environment:
-      DATABASE_URL: postgresql://relayops:relayops@db:5432/relayops
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     depends_on:
       db:
         condition: service_healthy
     networks:
       - frontend
       - backend
+    healthcheck:
+        test: ["CMD-SHELL", "python -c \"import urllib.request as u; u.urlopen('http://localhost:8000/health')\""]
+        interval: 5s
+        timeout: 3s
+        retries: 10
 
   worker:
     build: ./worker
     environment:
-      DATABASE_URL: postgresql://relayops:relayops@db:5432/relayops
-      RECEIVER_URL: http://receiver:9000/webhook
-      WEBHOOK_SECRET: relayops-dev-secret
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      RECEIVER_URL: ${RECEIVER_URL}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
     depends_on:
       db:
         condition: service_healthy
@@ -41,18 +51,23 @@ services:
   receiver:
     build: ./receiver
     environment:
-      WEBHOOK_SECRET: relayops-dev-secret
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
     ports:
       - "9000:9000"
     networks:
       - webhooks
+    healthcheck:
+        test: ["CMD-SHELL", "python -c \"import urllib.request as u; u.urlopen('http://localhost:9000/health')\""]
+        interval: 5s
+        timeout: 3s
+        retries: 10
 
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: relayops
-      POSTGRES_PASSWORD: relayops
-      POSTGRES_DB: relayops
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -60,7 +75,7 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U relayops -d relayops"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 2s
       timeout: 3s
       retries: 30

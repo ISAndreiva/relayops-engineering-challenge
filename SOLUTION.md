@@ -28,6 +28,8 @@ sudo docker-compose up --build -d
 sudo docker-compose logs --tail=50 -> am vazut ca workeri nu se pot conecta la DB, si ca DB raporteaza "database system is ready to accept connections" mult dupa workeri. 
 sudo docker-compose exec api python -c "import socket; socket.create_connection(('db',5432),3); print('ok')" -> confirmare ca problema de conectare la DB este un race condition (api e in network-ul backend, containerele de workeri s-au oprit dupa esecul de conectare)
 
+sudo docker-compose exec worker python -c "import socket; print(socket.gethostbyname('receiver'))" -> verificare DNS intre containere
+
 curl -i http://localhost:8080/health > nginx raspunde dar returneaza 502 Bad Gateway, in general semnificand o problema la ce e in spatele nginx.
 sudo docker-compose logs | grep api -> api-1  | INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit) arata ca Uvicorn asculta doar localhost.
 
@@ -61,8 +63,7 @@ curl -s http://localhost:8080/metrics
 
 ## 5. Instrumente AI utilizate
 
-Ce instrumente ai folosit, pentru ce, și cum ai verificat ce au produs.
-Menționează cel puțin un caz în care AI-ul a greșit și cum ai observat.
+Am utilizat Swift-Qwen3.8-27B (fine tune de Qwen3.8 27B pentru mai putin overthinking) hostat local si Hermes Agent. Agentul a fost folosit doar ca ghid si pentru cod, rularea efectiva a comenzilor si implemnetarea solutilor oferite de acesta au fost facute manual pentru validare.
 
 ## 6. Ce ai îmbunătăți cu mai mult timp
-Folosirea psycopg_pool in loc de o singura conexiune intr-un loop penru retry.
+Folosirea psycopg_pool in loc de o singura conexiune intr-un loop pentru retry.
