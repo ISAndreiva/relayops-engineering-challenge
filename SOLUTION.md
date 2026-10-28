@@ -17,6 +17,10 @@ Pentru fiecare problemă: simptom → cum ai investigat (comenzi, loguri, ipotez
 | 7 | worker/receiver | Receiver-ul a raspuns 401 la evenimentul trimis de worker | 'raw = json.dumps(body).encode()' are spatii albe care intra in token, in timp ce receiverul primeste json fara spati albe -> creaza alt token | Inlocuirea serializari implicite httpx cu una explicita folosind 'json.dumps().encode()', noua implemetare respecta si cerinta din contract despre HMAC peste body-ul brut |
 | 8 | worker | Eveniment care a primit 401 de la receiver a fost marcat delivered | 'deliver()' returna 'attempt' indiferent de raspunsul HTTP | modificat functia 'deliver()' astfel incat sa returnze si daca livrarea a fost cu success si modificat 'main' pentru noul return |
 | 9 | worker | Ambii workeri pot captura acelasi eveniment pending | 'fetch_pending' fara ownership, ambii workerii vad pending in DB si incep sa proceseze acelasi eveniment | claim pe eveniment inainte de procesare, postgres asigura atomicitatea operatiei UPDATE facuta de unul din cei 2 workeri |
+| 10 | worker | nu se respeca Retry-After | Retry-After nu este verificat in 'worker.py' | Aduagarea verificari headerului Retry-After, valoarea acestuia find folosita ca minim pentru retry |
+| 11 | worker | workerul nu avea handle pentru semnale | - | am adaugat handler |
+| 12 | worker | workerul nu primea semnalele de la docker | Dockerfile avea 'CMD python -u worker.py' ceea ce se rezolva la '/bin/sh -c python -u worker.py' -> python nu avea PID 1 si nu primea semnalele | Am inlocuit 'CMD python -u worker.py' cu 'CMD exec python -u worker.py' |
+| 13 | worker | evenimentele ramase in DB cu "processing" nu erau recuperate | worker nu verifica existenta acestui tip de eveniment | Am implementat un recovery la pornire a acestor evenimente 
 
 ## 2. Diagnostic networking
 

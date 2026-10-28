@@ -8,7 +8,7 @@ import hmac
 import json
 import os
 import time
-
+import signal
 import httpx
 import psycopg
 from psycopg.rows import dict_row
@@ -21,6 +21,15 @@ WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "1"))
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "10"))
 MAX_ATTEMPTS = 3
+
+_stop = False
+def _handle_sigterm(signum, frame):
+    global _stop
+    _stop = True
+    print(f"received signal {signum}, finishing current delivery and stopping", flush=True)
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
+signal.signal(signal.SIGINT, _handle_sigterm)
 
 
 def sign(raw: bytes) -> str:
@@ -71,7 +80,14 @@ def deliver(client, event):
         if not temp:
             break
         if attempt < MAX_ATTEMPTS:
-            time.sleep(2**attempt)
+            delay = float(2**attempt)
+            if resp is not None:
+                try:
+                    ra = float(resp.headers.get("Retry-After", ""))
+                    delay = max(delay, ra)
+                except ValueError:
+                    pass
+            time.sleep(delay)
     return attempts_used, False
 
 def connect_with_retry():
@@ -84,13 +100,26 @@ def connect_with_retry():
             time.sleep(delay)
             delay = min(delay * 2, 30.0)
 
+def recover_stale(conn):
+    n = conn.execute(
+        "UPDATE events SET status = 'pending', updated_at = now() "
+        "WHERE status = 'processing' RETURNING id"
+    ).fetchall()
+    if n:
+        print(f"recovered {len(n)} stale 'processing' event(s)", flush=True)
+
+
 def main():
+    global _stop
     print(f"worker started, receiver={RECEIVER_URL}")
     conn = connect_with_retry()
+    recover_stale(conn)
     with httpx.Client(timeout=5) as client:
-        while True:
+        while not _stop:
             events = fetch_pending(conn)
             for event in events:
+                if _stop:
+                    break
                 claimed = conn.execute("UPDATE events SET status = 'processing', updated_at = now() WHERE id = %s AND status = 'pending' RETURNING id",(event["id"],),).fetchone()
                 if claimed is None:
                     continue
@@ -101,6 +130,8 @@ def main():
                 )
             if not events:
                 time.sleep(POLL_INTERVAL)
+    conn.close()
+    print("worker stopped")
 
 
 if __name__ == "__main__":
