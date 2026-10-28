@@ -78,3 +78,23 @@ def get_event(event_id: str):
         for r in rows
     ]
     return row
+
+@app.get("/metrics")
+def metrics():
+    conn = get_conn()
+    counts = {row["status"]: row["n"] for row in conn.execute(
+        "SELECT status, COUNT(*) AS n FROM events GROUP BY status"
+        ).fetchall()}
+    total = conn.execute(
+        "SELECT COUNT(*) AS n FROM delivery_attempts"
+    ).fetchone()["n"]
+    lines = []
+    lines.append("# HELP relayops_events Events by current status.")
+    lines.append("# TYPE relayops_events gauge")
+    for status in ("pending", "processing", "delivered", "failed"):
+        lines.append(f'relayops_events{{status="{status}"}} {counts.get(status, 0)}')
+    lines.append("# HELP relayops_delivery_attempts_total Total delivery attempts recorded.")
+    lines.append("# TYPE relayops_delivery_attempts_total counter")
+    lines.append(f"relayops_delivery_attempts_total {total}")
+    body = "\n".join(lines) + "\n"
+    return Response(content=body, media_type="text/plain")
