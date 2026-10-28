@@ -10,7 +10,7 @@ Pentru fiecare problemă: simptom → cum ai investigat (comenzi, loguri, ipotez
 |---|------------|---------|-------|---------|
 | 1 | worker           | Crash la start: 'psycopg.OperationalError: connection failed: ... "172.20.0.2", port 5432 failed', si programul se opreste       |  Race condition la boot, workerul incearca sa se conecteze inainte ca DB sa fie ready (depends_on doar asigura ca DB a pornit, nu ca postgress este pornit complet)     |  Retry cu conectare în worker.py si depends_on: condition: service_healthy       |
 | 2 | FastAPI           | nginx returneaza 502 Bad Gateway la GET http://localhost:8080/health        |   Uvicorn pornit pe 127.0.0.1:8000 în api/Dockerfile, asculta doar in propriul container    | modificat  127.0.0.1 in 0.0.0.0 in   api/Dockerfile     |
-| 3 | worker | Containerele worker nu afiseaza nimic in log-uri pana se inchid. | Print e buffered by default, bufferul isi ia flush fie prin print cu flush=True sau la inchidere | Adaugarea -u la comanda python in worker/Dockerfile pentru a folosi modul unbuffered | 
+| 3 | worker | Containerele worker nu afiseaza nimic in log-uri ('docker compose logs worker' gol) pana se inchid. | Print e buffered by default, bufferul isi ia flush fie prin print cu flush=True sau la inchidere | Adaugarea -u la comanda python in worker/Dockerfile pentru a folosi modul unbuffered | 
 | 4 | nginx | POST cu un nou event returneaza 422 Unprocessable Entity cu '{"detail":[{"type":"missing","loc":["body"],"msg":"Field required","input":null}]}' | Nginx are 'proxy_pass_request_body off' pentru /events si sterge body-ul. | Eliminarea linilor 'proxy_pass_request_body off' si 'proxy_set_header Content-Length ""'  |
 | 5 | worker/receiver | status failed la eveniment nou dupa 3 incercari | gethostbyname('receiver') returneaza 192.0.2.10, ip gresit din cauza docker-compose.override.yml | stergerea docker-compose.override.yml |
 | 6 | DB | db accesibil din host la localhost:5432 | docker-compose.override.yml configura 'ports: - "127.0.0.1::5432"' | stergerea docker-compose.override.yml |
@@ -34,9 +34,9 @@ sudo docker-compose logs | grep api -> api-1  | INFO:     Uvicorn running on htt
 
 ## 3. Decizii tehnice
 
-- Idempotency:
-- Retry (ce erori consideri temporare, backoff):
-- Recuperare după restart:
+- Idempotency: Daca la POST exista deja un eveniment cu acelasi id se compara body-ul si type-ul si daca sunt egale se returneza 200, altfel 409. Daca nu exista conflict de id atunci se adauga noul eveniment si se returneaza 202. 
+- Retry (ce erori consideri temporare, backoff): Erorile de retea sunt cele considerate temporare (429, 5xx), backoff-ul se face crescand timpul dintre retry-uri cu puteri ale lui 2.
+- Recuperare după restart: La start workerul ia toate evenimetele cu status "processing" si le modifica status-ul la "pending".
 - Altele:
 
 ## 4. Cum pornești și verifici sistemul

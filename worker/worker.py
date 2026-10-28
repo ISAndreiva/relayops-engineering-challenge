@@ -48,13 +48,19 @@ def fetch_pending(conn):
         (BATCH_SIZE,),
     ).fetchall()
 
+def record_attempt(conn, event_pk, attempt, status_code, error):
+    conn.execute(
+        "INSERT INTO delivery_attempts (event_pk, attempt, status_code, error) VALUES (%s, %s, %s, %s)",
+        (event_pk, attempt, status_code, error),)
 
-def deliver(client, event):
+
+def deliver(client, conn, event):
     """Returns (attempts_used, delivered).
     2xx -> delivered.
     429 / 5xx -> retried
     other -> permanent failure, no retry.
     """
+    global _stop
     body = {
         "event_id": event["event_id"],
         "type": event["type"],
@@ -64,20 +70,26 @@ def deliver(client, event):
     headers = {"X-RelayOps-Signature": sign(raw),
                "Content-Type": "application/json"}
     attempts_used = 0
+    resp = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         attempts_used = attempt
         temp = False
+        code = None
+        error = None
         try:
             resp = client.post(RECEIVER_URL, content=raw, headers=headers)
             code = resp.status_code
             print(f"delivered {event['event_id']} attempt={attempt} -> {code}")
             if code < 300:
+                record_attempt(conn, event["id"], attempt, code, None)
                 return attempts_used, True
             temp = code == 429 or 500 <= code < 600
         except httpx.HTTPError as exc:
             temp = True
+            error = f"{type(exc).__name__}: {exc}"
             print(f"{event['event_id']} attempt={attempt}: {exc}")
-        if not temp:
+        record_attempt(conn, event["id"], attempt, code, error)
+        if not temp or _stop:
             break
         if attempt < MAX_ATTEMPTS:
             delay = float(2**attempt)
@@ -123,7 +135,7 @@ def main():
                 claimed = conn.execute("UPDATE events SET status = 'processing', updated_at = now() WHERE id = %s AND status = 'pending' RETURNING id",(event["id"],),).fetchone()
                 if claimed is None:
                     continue
-                attempts, delivered = deliver(client, event)
+                attempts, delivered = deliver(client, conn, event)
                 conn.execute(
                     "UPDATE events SET status = %s, attempts = %s, updated_at = now() WHERE id = %s",
                     ("delivered" if delivered else "failed", attempts, event["id"]),
