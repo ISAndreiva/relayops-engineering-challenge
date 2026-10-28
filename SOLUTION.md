@@ -32,16 +32,18 @@ Pentru fiecare problemă: simptom → cum ai investigat (comenzi, loguri, ipotez
 ## 2. Diagnostic networking
 
 sudo docker-compose up --build -d
+
 sudo docker-compose logs --tail=50 -> am vazut ca workeri nu se pot conecta la DB, si ca DB raporteaza "database system is ready to accept connections" mult dupa workeri.
+
 sudo docker-compose exec api python -c "import socket; socket.create_connection(('db',5432),3); print('ok')" -> confirmare ca problema de conectare la DB este un race condition (api e in network-ul backend, containerele de workeri s-au oprit dupa esecul de conectare)
+
 sudo docker-compose exec worker python -c "import socket; print(socket.gethostbyname('receiver'))" -> verificare DNS intre containere -> 192.0.2.10 -> docker-compose.override.yml cu extra_hosts
 
 curl -i http://localhost:8080/health > nginx raspunde dar returneaza 502 Bad Gateway, in general semnificand o problema la ce e in spatele nginx.
+
 sudo docker-compose logs | grep api -> api-1  | INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit) arata ca Uvicorn asculta doar localhost.
 
 curl -s -i -X POST http://localhost:8080/events -d @/tmp/big.json -> 413 -> nginx.conf avea client_max_body_size 1k; curl -i /health -> X-Request-ID lipsea din response -> adaugat map + add_header ... always.
-
-Semnale: sudo docker-compose exec worker sh -c "kill -TERM 1; sleep 2; grep State /proc/1/status; cat /proc/1/wchan; ls /proc/1/fd | wc -l" -> State: S, wchan: do_wait, 3 fds -> PID 1 era /bin/sh (aștepta un copil), nu python si atunci SIGTERM-ul de la docker nu ajungea la procesul aplicatiei.
 
 ## 3. Decizii tehnice
 
@@ -50,26 +52,6 @@ Semnale: sudo docker-compose exec worker sh -c "kill -TERM 1; sleep 2; grep Stat
 - Recuperare după restart: La start workerul ia toate evenimetele cu status "processing" si le modifica status-ul la "pending" (claim-ul este invalidat). Delivered/failed raman la fel.
 - Altele: atomicitatea o da postgres, nu aplicatia; SIGTERM duce la terminarea livrarii curente si se termina in cateva secunde, fara evenimente blocate. Healthcheck pe toate serviciile (db/api/receiver/gateway) mai putin worker.
 
-
-## 4. Cum pornești și verifici sistemul
-
-In functie de distributie sintaxa pentru docker compose poate sa difere:
-```bash
-sudo docker-compose up -d --build
-sudo docker-compose logs
-```
-sau
-```bash
-sudo docker compose up -d --build
-sudo docker compose logs
-```
-In rest comenzile de test:
-```bash
-curl -s -i http://localhost:8080/health
-curl -s -X POST http://localhost:8080/events -H 'Content-Type: application/json' -d '{"event_id":"event1","type":"t","payload":{"x":1}}'
-...
-curl -s http://localhost:8080/metrics
-```
 
 ## 4. Cum pornești și verifici sistemul
 
@@ -95,8 +77,7 @@ curl -s http://localhost:8080/metrics
 pip install -r tests/requirements.txt
 pytest tests
 sudo docker-compose down
-
-## 5. Instrumente AI utilizate
+```
 
 ## 5. Instrumente AI utilizate
 
