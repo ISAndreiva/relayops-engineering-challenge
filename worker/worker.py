@@ -59,10 +59,19 @@ def deliver(client, event) -> int:
             time.sleep(2 ** attempt)
     return 0
 
+def connect_with_retry():
+    delay = 1.0
+    while True:
+        try:
+            return psycopg.connect(DATABASE_URL, row_factory=dict_row, autocommit=True)
+        except psycopg.OperationalError as exc:
+            print(f"db not ready ({exc}); retrying in {delay:.1f}s", flush=True)
+            time.sleep(delay)
+            delay = min(delay * 2, 30.0)
 
 def main():
     print(f"worker started, receiver={RECEIVER_URL}")
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row, autocommit=True)
+    conn = connect_with_retry()
     with httpx.Client(timeout=5) as client:
         while True:
             events = fetch_pending(conn)
