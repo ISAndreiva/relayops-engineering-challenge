@@ -14,7 +14,9 @@ Pentru fiecare problemă: simptom → cum ai investigat (comenzi, loguri, ipotez
 | 4 | nginx | POST cu un nou event returneaza 422 Unprocessable Entity cu '{"detail":[{"type":"missing","loc":["body"],"msg":"Field required","input":null}]}' | Nginx are 'proxy_pass_request_body off' pentru /events si sterge body-ul. | Eliminarea linilor 'proxy_pass_request_body off' si 'proxy_set_header Content-Length ""'  |
 | 5 | worker/receiver | status failed la eveniment nou dupa 3 incercari | gethostbyname('receiver') returneaza 192.0.2.10, ip gresit din cauza docker-compose.override.yml | stergerea docker-compose.override.yml |
 | 6 | DB | db accesibil din host la localhost:5432 | docker-compose.override.yml configura 'ports: - "127.0.0.1::5432"' | stergerea docker-compose.override.yml |
-
+| 7 | worker/receiver | Receiver-ul a raspuns 401 la evenimentul trimis de worker | 'raw = json.dumps(body).encode()' are spatii albe care intra in token, in timp ce receiverul primeste json fara spati albe -> creaza alt token | Inlocuirea serializari implicite httpx cu una explicita folosind 'json.dumps().encode()', noua implemetare respecta si cerinta din contract despre HMAC peste body-ul brut |
+| 8 | worker | Eveniment care a primit 401 de la receiver a fost marcat delivered | 'deliver()' returna 'attempt' indiferent de raspunsul HTTP | modificat functia 'deliver()' astfel incat sa returnze si daca livrarea a fost cu success si modificat 'main' pentru noul return |
+| 9 | worker | Ambii workeri pot captura acelasi eveniment pending | 'fetch_pending' fara ownership, ambii workerii vad pending in DB si incep sa proceseze acelasi eveniment | claim pe eveniment inainte de procesare, postgres asigura atomicitatea operatiei UPDATE facuta de unul din cei 2 workeri |
 
 ## 2. Diagnostic networking
 

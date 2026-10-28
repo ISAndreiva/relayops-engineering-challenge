@@ -23,8 +23,7 @@ BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "10"))
 MAX_ATTEMPTS = 3
 
 
-def sign(body: dict) -> str:
-    raw = json.dumps(body).encode()
+def sign(raw: bytes) -> str:
     return "sha256=" + hmac.new(WEBHOOK_SECRET.encode(), raw, hashlib.sha256).hexdigest()
 
 
@@ -41,23 +40,39 @@ def fetch_pending(conn):
     ).fetchall()
 
 
-def deliver(client, event) -> int:
-    """Returns the number of attempts used, or 0 if delivery failed."""
+def deliver(client, event):
+    """Returns (attempts_used, delivered).
+    2xx -> delivered.
+    429 / 5xx -> retried
+    other -> permanent failure, no retry.
+    """
     body = {
         "event_id": event["event_id"],
         "type": event["type"],
         "payload": event["payload"],
     }
-    headers = {"X-RelayOps-Signature": sign(body)}
+    raw = json.dumps(body).encode()
+    headers = {"X-RelayOps-Signature": sign(raw),
+               "Content-Type": "application/json"}
+    attempts_used = 0
     for attempt in range(1, MAX_ATTEMPTS + 1):
+        attempts_used = attempt
+        temp = False
         try:
-            resp = client.post(RECEIVER_URL, json=body, headers=headers)
-            print(f"delivered {event['event_id']} attempt={attempt} -> {resp.status_code}")
-            return attempt
+            resp = client.post(RECEIVER_URL, content=raw, headers=headers)
+            code = resp.status_code
+            print(f"delivered {event['event_id']} attempt={attempt} -> {code}")
+            if code < 300:
+                return attempts_used, True
+            temp = code == 429 or 500 <= code < 600
         except httpx.HTTPError as exc:
-            print(f"error delivering {event['event_id']} attempt={attempt}: {exc}")
-            time.sleep(2 ** attempt)
-    return 0
+            temp = True
+            print(f"{event['event_id']} attempt={attempt}: {exc}")
+        if not temp:
+            break
+        if attempt < MAX_ATTEMPTS:
+            time.sleep(2**attempt)
+    return attempts_used, False
 
 def connect_with_retry():
     delay = 1.0
@@ -65,7 +80,7 @@ def connect_with_retry():
         try:
             return psycopg.connect(DATABASE_URL, row_factory=dict_row, autocommit=True)
         except psycopg.OperationalError as exc:
-            print(f"db not ready ({exc}); retrying in {delay:.1f}s", flush=True)
+            print(f"db not ready ({exc}); retrying in {delay:.1f}s")
             time.sleep(delay)
             delay = min(delay * 2, 30.0)
 
@@ -76,10 +91,13 @@ def main():
         while True:
             events = fetch_pending(conn)
             for event in events:
-                attempts = deliver(client, event)
+                claimed = conn.execute("UPDATE events SET status = 'processing', updated_at = now() WHERE id = %s AND status = 'pending' RETURNING id",(event["id"],),).fetchone()
+                if claimed is None:
+                    continue
+                attempts, delivered = deliver(client, event)
                 conn.execute(
                     "UPDATE events SET status = %s, attempts = %s, updated_at = now() WHERE id = %s",
-                    ("delivered" if attempts else "failed", attempts or MAX_ATTEMPTS, event["id"]),
+                    ("delivered" if delivered else "failed", attempts, event["id"]),
                 )
             if not events:
                 time.sleep(POLL_INTERVAL)
