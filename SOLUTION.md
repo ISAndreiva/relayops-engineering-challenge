@@ -41,8 +41,22 @@ sudo docker-compose logs | grep api -> api-1  | INFO:     Uvicorn running on htt
 
 ## 4. Cum pornești și verifici sistemul
 
+In functie de distributie sintaxa pentru docker compose poate sa difere:
 ```bash
-# comenzi
+sudo docker-compose up -d --build
+sudo docker-compose logs
+```
+sau
+```bash
+sudo docker compose up -d --build
+sudo docker compose logs
+```
+In rest comenzile de test:
+```bash
+curl -s -i http://localhost:8080/health
+curl -s -X POST http://localhost:8080/events -H 'Content-Type: application/json' -d '{"event_id":"event1","type":"t","payload":{"x":1}}'
+...
+curl -s http://localhost:8080/metrics
 ```
 
 ## 5. Instrumente AI utilizate
