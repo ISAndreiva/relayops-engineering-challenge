@@ -20,7 +20,7 @@ jobs:
       - name: Wait for gateway
         run: |
           for i in $(seq 1 60); do
-            curl -sf http://localhost:8080/ready && exit 0
+            curl -sf http://localhost:8080/health && exit 0
             sleep 2
           done
           echo "Gateway never became ready"
