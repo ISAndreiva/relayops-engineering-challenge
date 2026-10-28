@@ -8,9 +8,13 @@ Pentru fiecare problemă: simptom → cum ai investigat (comenzi, loguri, ipotez
 
 | # | Componentă | Simptom | Cauză | Soluție |
 |---|------------|---------|-------|---------|
-| 1 | worker           | Crash la start: psycopg.OperationalError: connection failed: ... "172.20.0.2", port 5432 failed, si programul se opreste       |  Race condition la boot, workerul incearca sa se conecteze inainte ca DB sa fie ready (depends_on doar asigura ca DB a pornit, nu ca postgress este pornit complet)     |  Retry cu conectare în worker.py si depends_on: condition: service_healthy       |
-| 2 | FastAPI/gateway           | nginx returneaza 502 Bad Gateway la GET http://localhost:8080/health        |   Uvicorn pornit pe 127.0.0.1:8000 în api/Dockerfile, asculta doar in propriul container    | modificat  127.0.0.1 in 0.0.0.0 in   api/Dockerfile     |
+| 1 | worker           | Crash la start: 'psycopg.OperationalError: connection failed: ... "172.20.0.2", port 5432 failed', si programul se opreste       |  Race condition la boot, workerul incearca sa se conecteze inainte ca DB sa fie ready (depends_on doar asigura ca DB a pornit, nu ca postgress este pornit complet)     |  Retry cu conectare în worker.py si depends_on: condition: service_healthy       |
+| 2 | FastAPI           | nginx returneaza 502 Bad Gateway la GET http://localhost:8080/health        |   Uvicorn pornit pe 127.0.0.1:8000 în api/Dockerfile, asculta doar in propriul container    | modificat  127.0.0.1 in 0.0.0.0 in   api/Dockerfile     |
 | 3 | worker | Containerele worker nu afiseaza nimic in log-uri pana se inchid. | Print e buffered by default, bufferul isi ia flush fie prin print cu flush=True sau la inchidere | Adaugarea -u la comanda python in worker/Dockerfile pentru a folosi modul unbuffered | 
+| 4 | nginx | POST cu un nou event returneaza 422 Unprocessable Entity cu '{"detail":[{"type":"missing","loc":["body"],"msg":"Field required","input":null}]}' | Nginx are 'proxy_pass_request_body off' pentru /events si sterge body-ul. | Eliminarea linilor 'proxy_pass_request_body off' si 'proxy_set_header Content-Length ""'  |
+| 5 | worker/receiver | status failed la eveniment nou dupa 3 incercari | gethostbyname('receiver') returneaza 192.0.2.10, ip gresit din cauza docker-compose.override.yml | stergerea docker-compose.override.yml |
+| 6 | DB | db accesibil din host la localhost:5432 | docker-compose.override.yml configura 'ports: - "127.0.0.1::5432"' | stergerea docker-compose.override.yml |
+
 
 ## 2. Diagnostic networking
 
